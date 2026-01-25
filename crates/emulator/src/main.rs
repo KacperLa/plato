@@ -558,7 +558,7 @@ fn main() -> Result<(), Error> {
                             &mut context,
                         )),
                         AppCmd::Terminal => {
-                            match plato_core::view::terminal::Terminal::new(
+                            match cadmus_core::view::terminal::Terminal::new(
                                 context.fb.rect(),
                                 1024,
                                 &mut rq,
@@ -766,10 +766,6 @@ fn main() -> Result<(), Error> {
                         }
                     }
                 },
-                Event::Notify(msg) => {
-                    let notif = Notification::new(None, msg, false, &tx, &mut rq, &mut context);
-                    view.children_mut().push(Box::new(notif) as Box<dyn View>);
-                }
                 Event::Device(DeviceEvent::NetUp)
                 | Event::CheckFetcher(..)
                 | Event::FetcherAddDocument(..)

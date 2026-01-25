@@ -33,7 +33,7 @@ use crate::view::menu_entry::MenuEntry;
 use crate::view::named_input::NamedInput;
 use crate::view::notification::Notification;
 use crate::view::search_bar::SearchBar;
-use crate::view::{Bus, Event, Hub, RenderData, RenderQueue, View};
+use crate::view::{Bus, Event, Hub, NotificationEvent, RenderData, RenderQueue, View};
 use crate::view::{EntryId, EntryKind, Id, ViewId, ID_FEEDER};
 use crate::view::{BIG_BAR_HEIGHT, SMALL_BAR_HEIGHT, THICKNESS_MEDIUM};
 use anyhow::{format_err, Error};
@@ -1896,7 +1896,7 @@ impl Home {
                             Some("notify") => {
                                 if let Some(msg) = event.get("message").and_then(JsonValue::as_str)
                                 {
-                                    hub2.send(Event::Notify(msg.to_string())).ok();
+                                    hub2.send(Event::Notification(NotificationEvent::Show(msg.to_string()))).ok();
                                 }
                             }
                             Some("setWifi") => {

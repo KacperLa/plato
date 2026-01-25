@@ -45,10 +45,6 @@ impl TerminalRenderer {
         (rows, cols)
     }
     
-    pub fn new(fonts: &mut Fonts, rows: u16, cols: u16) -> Self {
-        Self::new_with_font_size(fonts, rows, cols, 512)
-    }
-    
     pub fn new_with_font_size(fonts: &mut Fonts, rows: u16, cols: u16, font_size: u32) -> Self {
         let dpi = CURRENT_DEVICE.dpi;
         let font = &mut fonts.monospace.bold;
