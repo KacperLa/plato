@@ -1,0 +1,168 @@
+```
+Plato on Raspberry Pi 4 with Waveshare E-Ink Display
+=====================================================
+
+Architecture Overview:
+
+┌─────────────────────────────────────────────────────────────┐
+│                      Plato Application                       │
+│                     (crates/plato/src/)                      │
+└──────────────────────────┬──────────────────────────────────┘
+                           │
+                           │ Uses Framebuffer trait
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│              Device Detection (device.rs)                    │
+│  ┌────────────────┐  ┌─────────────────────────────────┐   │
+│  │ Kobo Device?   │  │ Raspberry Pi 4 Detected?        │   │
+│  │ (PRODUCT env)  │  │ (/proc/device-tree/model)       │   │
+│  └────────┬───────┘  └──────────┬──────────────────────┘   │
+│           │                      │                           │
+│           ▼                      ▼                           │
+│  ┌────────────────┐     ┌───────────────────┐              │
+│  │ Kobo Model     │     │ RaspberryPi4      │              │
+│  │ (mark 1-13)    │     │ (mark 14)         │              │
+│  └────────┬───────┘     └──────────┬────────┘              │
+└───────────┼─────────────────────────┼────────────────────────┘
+            │                         │
+            ▼                         ▼
+┌─────────────────────┐    ┌──────────────────────────────┐
+│  KoboFramebuffer1/2 │    │  WaveshareFramebuffer        │
+│  (kobo1.rs/kobo2.rs)│    │  (waveshare.rs)              │
+└─────────────────────┘    └──────────────────────────────┘
+            │                         │
+            │                         │ Implements Framebuffer trait
+            ▼                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│              Framebuffer Trait (mod.rs)                      │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │ • set_pixel()      • draw_rectangle()               │   │
+│  │ • set_blended_pixel() • draw_pixmap()               │   │
+│  │ • invert_region()  • update(rect, mode)             │   │
+│  │ • shift_region()   • wait(token)                    │   │
+│  └──────────────────────────────────────────────────────┘   │
+└─────────────────────────┬───────────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────────┐
+│              Hardware Abstraction Layer                      │
+│                                                              │
+│  Kobo:                    Raspberry Pi 4:                   │
+│  ┌──────────────────┐    ┌──────────────────────────────┐  │
+│  │ mxcfb_sys.rs     │    │ linuxfb_sys.rs               │  │
+│  │ ION memory       │    │ Standard framebuffer mmap     │  │
+│  │ EPDC ioctl       │    │ /dev/fb0 access              │  │
+│  └────────┬─────────┘    └──────────┬───────────────────┘  │
+│           │                          │                       │
+└───────────┼──────────────────────────┼───────────────────────┘
+            │                          │
+            ▼                          ▼
+┌─────────────────────┐    ┌──────────────────────────────┐
+│   Kobo Hardware     │    │   Raspberry Pi + Waveshare   │
+│   • E-ink panel     │    │   • Linux framebuffer        │
+│   • EPDC controller │    │   • IT8951 controller        │
+│   • Touch digitizer │    │   • E-ink display            │
+└─────────────────────┘    └──────────────────────────────┘
+
+
+Update Mode Mapping (Waveshare):
+================================
+
+Plato UpdateMode          IT8951 Mode     Characteristics
+─────────────────────────────────────────────────────────
+UpdateMode::Gui       →   GC16 (mode 2)   Best quality, 16 levels
+UpdateMode::Partial   →   GL16 (mode 3)   Good quality, faster
+UpdateMode::Full      →   GC16 (mode 2)   Full refresh, ghosting removal
+UpdateMode::Fast      →   DU (mode 1)     Fast, 1-bit monochrome
+UpdateMode::FastMono  →   A2 (mode 6)     Fastest, animation mode
+
+
+Data Flow for Display Update:
+==============================
+
+1. Application renders content
+   ↓
+2. Calls fb.update(rect, mode)
+   ↓
+3. WaveshareFramebuffer::update()
+   │
+   ├─→ write_to_device(rect)
+   │   ├─→ mmap /dev/fb0
+   │   ├─→ copy local buffer to device
+   │   └─→ munmap
+   │
+   └─→ refresh_display(rect, mode)
+       └─→ IT8951 controller updates e-ink panel
+
+
+Build & Deployment Flow:
+=========================
+
+Development Machine:                 Raspberry Pi:
+─────────────────────               ──────────────
+
+1. ./build-rpi4.sh                  4. ./setup-rpi4.sh
+   │                                   │
+   ├─ rustup target add                ├─ apt-get install deps
+   │  aarch64-unknown-linux-gnu        ├─ configure framebuffer
+   │                                   ├─ set environment vars
+   ├─ cargo build --target=...         └─ install systemd service
+   │  └─ Cross-compile                     (optional)
+   │
+   └─ Binary: target/.../plato      5. sudo ./plato
+                                       │
+2. ./deploy-rpi4.sh                    ├─ Detect Raspberry Pi
+   │                                   ├─ Load WaveshareFramebuffer
+   ├─ scp plato → pi@rpi:/plato       ├─ Initialize display
+   ├─ scp resources                    ├─ Start event loop
+   └─ scp settings                     └─ Render UI
+      │
+      ↓
+3. SSH connection established
+
+
+Environment Configuration:
+==========================
+
+Required Environment Variables:
+┌────────────────────────────────────────┐
+│ DISPLAY_WIDTH   = 1872  (or custom)   │
+│ DISPLAY_HEIGHT  = 1404  (or custom)   │
+│ DISPLAY_DPI     = 227   (or custom)   │
+└────────────────────────────────────────┘
+            ↓
+    Device::new_raspberry_pi(width, height, dpi)
+            ↓
+    Used for UI scaling and layout
+
+
+File Organization:
+==================
+
+plato/
+├── crates/
+│   ├── core/src/
+│   │   ├── framebuffer/
+│   │   │   ├── mod.rs           (trait definition)
+│   │   │   ├── kobo1.rs         (Kobo old devices)
+│   │   │   ├── kobo2.rs         (Kobo new devices)
+│   │   │   └── waveshare.rs     (NEW: Raspberry Pi)
+│   │   │
+│   │   └── device.rs            (MODIFIED: +RaspberryPi4)
+│   │
+│   └── plato/src/
+│       └── app.rs               (MODIFIED: +Waveshare selection)
+│
+├── .cargo/
+│   └── config.toml              (MODIFIED: +ARM targets)
+│
+├── build-rpi4.sh                (NEW: Build script)
+├── deploy-rpi4.sh               (NEW: Deploy script)
+├── setup-rpi4.sh                (NEW: Pi setup script)
+├── test-waveshare.sh            (NEW: Test script)
+├── rpi4-all.sh                  (NEW: All-in-one script)
+│
+└── contrib/
+    ├── Settings-rpi4.toml       (NEW: Sample config)
+    └── plato-rpi4.service       (NEW: Systemd service)
+```
